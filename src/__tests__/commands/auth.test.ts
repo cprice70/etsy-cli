@@ -183,7 +183,7 @@ describe("auth login command", () => {
     const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
     const logOutput = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
     const allOutput = logOutput + "\n" + errorOutput;
-    // printSuccess writes to stderr via console.error or stdout — check saveConfig was called
+    // printSuccess calls console.log — check saveConfig was called
     expect(saveConfig).toHaveBeenCalled();
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -285,5 +285,62 @@ describe("auth login command", () => {
     expect(mockQuestion).toHaveBeenCalledTimes(4);
     expect(saveConfig).toHaveBeenCalled();
     expect(processExitSpy).not.toHaveBeenCalled();
+  });
+
+  it("empty API key: prints error and exits", async () => {
+    const { loadConfig } = await import("../../config.js");
+    vi.mocked(loadConfig).mockReturnValue({});
+    // First question (API key) returns empty string
+    mockQuestion.mockResolvedValueOnce("");
+
+    const program = new Command();
+    program.exitOverride();
+    registerAuthCommands(program);
+
+    await program.parseAsync(["node", "test", "auth", "login"]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(errorOutput).toContain("API Key");
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("empty client ID: prints error and exits", async () => {
+    const { loadConfig } = await import("../../config.js");
+    vi.mocked(loadConfig).mockReturnValue({});
+    // API key provided, client ID is empty
+    mockQuestion
+      .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("");
+
+    const program = new Command();
+    program.exitOverride();
+    registerAuthCommands(program);
+
+    await program.parseAsync(["node", "test", "auth", "login"]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(errorOutput).toContain("Client ID");
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("empty auth code during OAuth: prints error and exits", async () => {
+    const { loadConfig } = await import("../../config.js");
+    vi.mocked(loadConfig).mockReturnValue({});
+    // API key and client ID provided, OAuth confirmed, but auth code is empty
+    mockQuestion
+      .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("myclientid123")
+      .mockResolvedValueOnce("y")
+      .mockResolvedValueOnce("");
+
+    const program = new Command();
+    program.exitOverride();
+    registerAuthCommands(program);
+
+    await program.parseAsync(["node", "test", "auth", "login"]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(errorOutput).toContain("Authorization code");
+    expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 });

@@ -49,7 +49,12 @@ async function exchangeCodeForTokens(
     );
   }
 
-  return response.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>;
+  const data = await response.json() as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
+  if (typeof data.access_token !== "string" || !data.access_token ||
+      typeof data.refresh_token !== "string" || !data.refresh_token) {
+    throw new Error("Invalid token response: missing access_token or refresh_token");
+  }
+  return data as { access_token: string; refresh_token: string; expires_in: number };
 }
 
 async function detectShopId(accessToken: string, apiKey: string): Promise<string | undefined> {
@@ -104,12 +109,14 @@ export function registerAuthCommands(program: Command): void {
         if (!apiKey.trim()) {
           printError("API Key is required");
           process.exit(1);
+          return;
         }
 
         const clientId = await rl.question("Client ID (from your Etsy app): ");
         if (!clientId.trim()) {
           printError("Client ID is required");
           process.exit(1);
+          return;
         }
 
         const currentConfig = loadConfig();
@@ -127,6 +134,7 @@ export function registerAuthCommands(program: Command): void {
         if (doOAuth.trim().toLowerCase() === "y") {
           const codeVerifier = generateCodeVerifier();
           const codeChallenge = generateCodeChallenge(codeVerifier);
+          /** CSRF protection value included in the auth URL; not verified in this manual copy-paste flow where users paste only the `code` parameter. */
           const state = crypto.randomBytes(16).toString("hex");
 
           const authUrl =
@@ -149,6 +157,7 @@ export function registerAuthCommands(program: Command): void {
           if (!code.trim()) {
             printError("Authorization code is required");
             process.exit(1);
+            return;
           }
 
           process.stdout.write("Exchanging code for tokens... ");
