@@ -16,7 +16,11 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cprice70/etsy-cli"
+  },
+  "author": "cprice70",
   "license": "MIT",
   "engines": { "node": ">=18" },
   "dependencies": {
