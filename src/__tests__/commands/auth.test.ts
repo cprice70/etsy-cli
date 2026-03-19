@@ -33,6 +33,13 @@ vi.mock("readline/promises", () => ({
   })),
 }));
 
+vi.mock("../../commands/auth-callback.js", () => ({
+  waitForCallback: vi.fn().mockResolvedValue("testcode123"),
+  openBrowser: vi.fn(),
+  REDIRECT_URI: "http://localhost:3003/callback",
+  CALLBACK_PORT: 3003,
+}));
+
 describe("PKCE helpers", () => {
   it("generateCodeVerifier returns 43-char URL-safe string", () => {
     const verifier = generateCodeVerifier();
@@ -159,9 +166,10 @@ describe("auth login command", () => {
   it("login without OAuth: prompts for api key and client ID, saves config, prints success", async () => {
     const { saveConfig, loadConfig } = await import("../../config.js");
     vi.mocked(loadConfig).mockReturnValue({});
-    // Answers: apiKey, clientId, skip OAuth
+    // Answers: apiKey, sharedSecret, clientId, skip OAuth
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("mysecret123")
       .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("n");
 
@@ -171,10 +179,11 @@ describe("auth login command", () => {
 
     await program.parseAsync(["node", "test", "auth", "login"]);
 
-    // saveConfig called at least once with apiKey and clientId (immediate save)
+    // saveConfig called at least once with apiKey, sharedSecret, and clientId
     expect(saveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "myapikey12345",
+        sharedSecret: "mysecret123",
         clientId: "myclientid123",
       })
     );
@@ -211,12 +220,12 @@ describe("auth login command", () => {
         json: async () => ({ shop_id: 99999 }),
       });
 
-    // Answers: apiKey, clientId, confirm OAuth ("y"), auth code
+    // Answers: apiKey, sharedSecret, clientId, confirm OAuth ("y")
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("mysecret123")
       .mockResolvedValueOnce("myclientid123")
-      .mockResolvedValueOnce("y")
-      .mockResolvedValueOnce("authcode123");
+      .mockResolvedValueOnce("y");
 
     const program = new Command();
     program.exitOverride();
@@ -232,6 +241,7 @@ describe("auth login command", () => {
     expect(saveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "myapikey12345",
+        sharedSecret: "mysecret123",
         clientId: "myclientid123",
         accessToken: "access_abc",
         refreshToken: "refresh_xyz",
@@ -239,13 +249,13 @@ describe("auth login command", () => {
       })
     );
 
-    // Introspect fetch should include x-api-key header
+    // Introspect fetch should include combined x-api-key header
     const introspectCall = fetchMock.mock.calls[1];
-    expect(introspectCall[1].headers["x-api-key"]).toBe("myapikey12345");
+    expect(introspectCall[1].headers["x-api-key"]).toBe("myapikey12345:mysecret123");
 
-    // Shops fetch should include x-api-key header
+    // Shops fetch should include combined x-api-key header
     const shopsCall = fetchMock.mock.calls[2];
-    expect(shopsCall[1].headers["x-api-key"]).toBe("myapikey12345");
+    expect(shopsCall[1].headers["x-api-key"]).toBe("myapikey12345:mysecret123");
 
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -271,9 +281,10 @@ describe("auth login command", () => {
 
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("mysecret123")
       .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("y")
-      .mockResolvedValueOnce("authcode123");
+      .mockResolvedValueOnce(""); // manual shop ID prompt — skip
 
     const program = new Command();
     program.exitOverride();
@@ -281,8 +292,8 @@ describe("auth login command", () => {
 
     await program.parseAsync(["node", "test", "auth", "login"]);
 
-    // Should complete without shop ID, no further prompts (no manual fallback)
-    expect(mockQuestion).toHaveBeenCalledTimes(4);
+    // 5 prompts: apiKey, sharedSecret, clientId, oauth confirm, manual shop ID
+    expect(mockQuestion).toHaveBeenCalledTimes(5);
     expect(saveConfig).toHaveBeenCalled();
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -304,12 +315,32 @@ describe("auth login command", () => {
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 
+  it("empty shared secret: prints error and exits", async () => {
+    const { loadConfig } = await import("../../config.js");
+    vi.mocked(loadConfig).mockReturnValue({});
+    // API key provided, shared secret is empty
+    mockQuestion
+      .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("");
+
+    const program = new Command();
+    program.exitOverride();
+    registerAuthCommands(program);
+
+    await program.parseAsync(["node", "test", "auth", "login"]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(errorOutput).toContain("Shared Secret");
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
   it("empty client ID: prints error and exits", async () => {
     const { loadConfig } = await import("../../config.js");
     vi.mocked(loadConfig).mockReturnValue({});
-    // API key provided, client ID is empty
+    // API key + shared secret provided, client ID is empty
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("mysecret123")
       .mockResolvedValueOnce("");
 
     const program = new Command();
@@ -323,15 +354,20 @@ describe("auth login command", () => {
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 
-  it("empty auth code during OAuth: prints error and exits", async () => {
+  it("login with OAuth: handles callback failure (e.g. state mismatch)", async () => {
     const { loadConfig } = await import("../../config.js");
     vi.mocked(loadConfig).mockReturnValue({});
-    // API key and client ID provided, OAuth confirmed, but auth code is empty
+
+    const { waitForCallback } = await import("../../commands/auth-callback.js");
+    vi.mocked(waitForCallback).mockRejectedValueOnce(
+      new Error("Authorization failed: missing code or state mismatch")
+    );
+
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
+      .mockResolvedValueOnce("mysecret123")
       .mockResolvedValueOnce("myclientid123")
-      .mockResolvedValueOnce("y")
-      .mockResolvedValueOnce("");
+      .mockResolvedValueOnce("y");
 
     const program = new Command();
     program.exitOverride();
@@ -340,7 +376,7 @@ describe("auth login command", () => {
     await program.parseAsync(["node", "test", "auth", "login"]);
 
     const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(errorOutput).toContain("Authorization code");
+    expect(errorOutput).toContain("Authorization failed");
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 });

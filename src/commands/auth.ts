@@ -3,11 +3,10 @@ import crypto from "crypto";
 import { Command } from "commander";
 import { loadConfig, saveConfig, deleteConfig, getConfigPath, type Config } from "../config.js";
 import { printSuccess, printError, printWarning } from "../output.js";
+import { CALLBACK_PORT, REDIRECT_URI, openBrowser, waitForCallback } from "./auth-callback.js";
 
 const OAUTH_SCOPES = "listings_r listings_w transactions_r shops_r";
-const REDIRECT_URI = "https://www.etsy.com/oauth/connect";
 const TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
-const INTROSPECT_URL = "https://api.etsy.com/v3/public/oauth/token/introspect";
 
 export function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -27,7 +26,7 @@ async function exchangeCodeForTokens(
   code: string,
   clientId: string,
   codeVerifier: string
-): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+): Promise<{ access_token: string; refresh_token: string; expires_in: number; user_id?: number | string }> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     client_id: clientId,
@@ -49,39 +48,45 @@ async function exchangeCodeForTokens(
     );
   }
 
-  const data = await response.json() as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
+  const data = await response.json() as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; user_id?: unknown };
   if (typeof data.access_token !== "string" || !data.access_token ||
       typeof data.refresh_token !== "string" || !data.refresh_token) {
     throw new Error("Invalid token response: missing access_token or refresh_token");
   }
-  return data as { access_token: string; refresh_token: string; expires_in: number };
+  return data as { access_token: string; refresh_token: string; expires_in: number; user_id?: number | string };
 }
 
-async function detectShopId(accessToken: string, apiKey: string): Promise<string | undefined> {
+async function detectShopId(
+  accessToken: string,
+  xApiKey: string,
+  userId?: number | string
+): Promise<string | undefined> {
   try {
-    // Introspect to get user_id
-    const introspectRes = await fetch(INTROSPECT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": `Bearer ${accessToken}`,
-        "x-api-key": apiKey,
-      },
-      body: new URLSearchParams({ token: accessToken }).toString(),
-    });
+    let resolvedUserId = userId;
 
-    if (!introspectRes.ok) return undefined;
+    // If user_id not provided, fetch current user via /application/users/me
+    if (!resolvedUserId) {
+      const meRes = await fetch(`https://openapi.etsy.com/v3/application/users/me`, {
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "x-api-key": xApiKey,
+        },
+      });
 
-    const introspect = await introspectRes.json() as { user_id?: number };
-    if (!introspect.user_id) return undefined;
+      if (!meRes.ok) return undefined;
+
+      const me = await meRes.json() as { user_id?: number | string };
+      resolvedUserId = me.user_id;
+      if (!resolvedUserId) return undefined;
+    }
 
     // Get shops for user
     const shopsRes = await fetch(
-      `https://openapi.etsy.com/v3/application/users/${introspect.user_id}/shops`,
+      `https://openapi.etsy.com/v3/application/users/${resolvedUserId}/shops`,
       {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
-          "x-api-key": apiKey,
+          "x-api-key": xApiKey,
         },
       }
     );
@@ -112,7 +117,14 @@ export function registerAuthCommands(program: Command): void {
           return;
         }
 
-        const clientId = await rl.question("Client ID (from your Etsy app): ");
+        const sharedSecret = await rl.question("Shared Secret: ");
+        if (!sharedSecret.trim()) {
+          printError("Shared Secret is required");
+          process.exit(1);
+          return;
+        }
+
+        const clientId = await rl.question("Client ID (same as API Key / keystring): ");
         if (!clientId.trim()) {
           printError("Client ID is required");
           process.exit(1);
@@ -123,6 +135,7 @@ export function registerAuthCommands(program: Command): void {
         const partialConfig: Partial<Config> = {
           ...currentConfig,
           apiKey: apiKey.trim(),
+          sharedSecret: sharedSecret.trim(),
           clientId: clientId.trim(),
         };
 
@@ -134,7 +147,6 @@ export function registerAuthCommands(program: Command): void {
         if (doOAuth.trim().toLowerCase() === "y") {
           const codeVerifier = generateCodeVerifier();
           const codeChallenge = generateCodeChallenge(codeVerifier);
-          /** CSRF protection value included in the auth URL; not verified in this manual copy-paste flow where users paste only the `code` parameter. */
           const state = crypto.randomBytes(16).toString("hex");
 
           const authUrl =
@@ -147,21 +159,16 @@ export function registerAuthCommands(program: Command): void {
             `&code_challenge=${codeChallenge}` +
             `&code_challenge_method=S256`;
 
-          console.log("\nVisit this URL to authorize:\n");
+          console.log("\nOpening browser for authorization...");
+          console.log("(If it doesn't open, visit this URL manually:)\n");
           console.log(authUrl);
-          console.log(
-            "\nAfter authorizing, copy the `code` query parameter from the redirect URL."
-          );
+          console.log(`\nWaiting for callback on http://localhost:${CALLBACK_PORT}...\n`);
 
-          const code = await rl.question("\nPaste the authorization code: ");
-          if (!code.trim()) {
-            printError("Authorization code is required");
-            process.exit(1);
-            return;
-          }
+          openBrowser(authUrl);
+          const code = await waitForCallback(state);
 
           process.stdout.write("Exchanging code for tokens... ");
-          const tokens = await exchangeCodeForTokens(code.trim(), clientId.trim(), codeVerifier);
+          const tokens = await exchangeCodeForTokens(code, clientId.trim(), codeVerifier);
           process.stdout.write("done\n");
 
           partialConfig.accessToken = tokens.access_token;
@@ -170,12 +177,19 @@ export function registerAuthCommands(program: Command): void {
             Math.floor(Date.now() / 1000) + tokens.expires_in;
 
           process.stdout.write("Detecting shop ID... ");
-          const shopId = await detectShopId(tokens.access_token, apiKey.trim());
+          const xApiKey = sharedSecret.trim()
+            ? `${apiKey.trim()}:${sharedSecret.trim()}`
+            : apiKey.trim();
+          const shopId = await detectShopId(tokens.access_token, xApiKey, tokens.user_id);
           if (shopId) {
             process.stdout.write(`found: ${shopId}\n`);
             partialConfig.shopId = shopId;
           } else {
             process.stdout.write("not found\n");
+            const manualShopId = await rl.question("Enter your Shop ID manually (or press Enter to skip): ");
+            if (manualShopId.trim()) {
+              partialConfig.shopId = manualShopId.trim();
+            }
           }
         }
 
@@ -186,6 +200,7 @@ export function registerAuthCommands(program: Command): void {
         process.exit(1);
       } finally {
         rl.close();
+        process.stdin.destroy();
       }
     });
 
@@ -208,6 +223,7 @@ export function registerAuthCommands(program: Command): void {
         console.log("");
         console.log("Etsy CLI Status:");
         console.log("  API Key:        " + maskSecret(config.apiKey));
+        console.log("  Shared Secret:  " + maskSecret(config.sharedSecret));
         console.log("  Client ID:      " + maskSecret(config.clientId));
         console.log("  OAuth:          " + (hasOAuth ? "configured" : "not configured"));
         console.log("  Access Token:   " + maskSecret(config.accessToken));
@@ -244,6 +260,7 @@ export function registerAuthCommands(program: Command): void {
         process.exit(1);
       } finally {
         rl.close();
+        process.stdin.destroy();
       }
     });
 }

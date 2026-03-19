@@ -4,6 +4,7 @@ import os from "os";
 
 export interface Config {
   apiKey: string;
+  sharedSecret: string;
   clientId: string;
   accessToken: string;
   refreshToken: string;
@@ -29,6 +30,7 @@ export function loadConfig(): Partial<Config> {
   const config: Partial<Config> = { ...fileConfig };
 
   if (process.env.ETSY_API_KEY) config.apiKey = process.env.ETSY_API_KEY;
+  if (process.env.ETSY_SHARED_SECRET) config.sharedSecret = process.env.ETSY_SHARED_SECRET;
   if (process.env.ETSY_ACCESS_TOKEN) config.accessToken = process.env.ETSY_ACCESS_TOKEN;
   if (process.env.ETSY_REFRESH_TOKEN) config.refreshToken = process.env.ETSY_REFRESH_TOKEN;
   if (process.env.ETSY_SHOP_ID) config.shopId = process.env.ETSY_SHOP_ID;

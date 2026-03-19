@@ -204,6 +204,7 @@ export function registerListingsCommands(
         return;
       } finally {
         rl.close();
+        process.stdin.destroy();
       }
     });
 

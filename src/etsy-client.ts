@@ -60,8 +60,12 @@ export class EtsyClient {
 
     if (this.config.accessToken) {
       headers["Authorization"] = `Bearer ${this.config.accessToken}`;
-    } else if (this.config.apiKey) {
-      headers["x-api-key"] = this.config.apiKey;
+    }
+
+    if (this.config.apiKey) {
+      headers["x-api-key"] = this.config.sharedSecret
+        ? `${this.config.apiKey}:${this.config.sharedSecret}`
+        : this.config.apiKey;
     }
 
     const init: RequestInit = { method, headers };
