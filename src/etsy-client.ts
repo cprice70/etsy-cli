@@ -39,7 +39,7 @@ export class EtsyClient {
     const response = await this.makeRequest(method, path, options);
 
     // Reactive refresh on 401
-    if (response.status === 401 && this.config.refreshToken) {
+    if (response.status === 401 && this.config.accessToken && this.config.refreshToken) {
       await this.doRefresh();
       const retryResponse = await this.makeRequest(method, path, options);
       return this.handleResponse(retryResponse);

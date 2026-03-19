@@ -137,4 +137,16 @@ describe("EtsyClient", () => {
     });
     await expect(client.call("GET", "/application/listings/999")).rejects.toThrow("404");
   });
+
+  it("does not attempt refresh on 401 when using api-key-only auth", async () => {
+    const client = new EtsyClient({ apiKey: "myapikey" });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "Invalid API key" }),
+    });
+    await expect(client.call("GET", "/application/shops/123")).rejects.toThrow("401");
+    // Only one fetch call — no refresh attempt
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
 });
