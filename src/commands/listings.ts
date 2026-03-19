@@ -178,7 +178,13 @@ export function registerListingsCommands(
         };
 
         if (shippingProfileIdStr.trim()) {
-          body.shipping_profile_id = parseInt(shippingProfileIdStr.trim(), 10);
+          const shippingProfileId = parseInt(shippingProfileIdStr.trim(), 10);
+          if (isNaN(shippingProfileId)) {
+            printError("Invalid shipping profile ID: must be an integer");
+            process.exit(1);
+            return;
+          }
+          body.shipping_profile_id = shippingProfileId;
         }
 
         const result = await client.call(
