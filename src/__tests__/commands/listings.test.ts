@@ -40,7 +40,8 @@ describe("listings commands", () => {
       "/application/shops/99999/listings/active",
       expect.objectContaining({ query: expect.objectContaining({ limit: "25" }) })
     );
-    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Hat");
   });
 
   it("listings list uses draft endpoint with --state draft", async () => {
@@ -181,6 +182,43 @@ describe("listings commands", () => {
     registerListingsCommands(program, mockClient, resolveShopId);
 
     await program.parseAsync(["node", "test", "listings", "list"]);
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("listings list shows auth hint on 401 error", async () => {
+    mockCall.mockRejectedValueOnce(new Error("HTTP 401: Unauthorized"));
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "listings", "list"]);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("auth login"));
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("listings get handles API errors", async () => {
+    mockCall.mockRejectedValueOnce(new Error("API Error"));
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "listings", "get", "--id", "42"]);
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("listings update with no flags shows error", async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "listings", "update", "--id", "42"]);
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);

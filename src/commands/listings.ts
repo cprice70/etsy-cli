@@ -1,7 +1,7 @@
 import readline from "readline/promises";
 import { Command } from "commander";
 import type { EtsyClient } from "../etsy-client.js";
-import { printTable, printJson, printError, colorState } from "../output.js";
+import { printTable, printJson, printError, colorState, isAuthError } from "../output.js";
 
 interface ListingPrice {
   amount: number;
@@ -85,6 +85,9 @@ export function registerListingsCommands(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         printError(`Failed to list listings: ${message}`);
+        if (isAuthError(err)) {
+          printError("Hint: run 'etsy auth login' to re-authenticate.");
+        }
         process.exit(1);
         return;
       }
@@ -115,6 +118,9 @@ export function registerListingsCommands(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         printError(`Failed to get listing: ${message}`);
+        if (isAuthError(err)) {
+          printError("Hint: run 'etsy auth login' to re-authenticate.");
+        }
         process.exit(1);
         return;
       }
@@ -140,13 +146,32 @@ export function registerListingsCommands(
         const whenMade = await rl.question("When made? (e.g. 2020_2024): ");
         const isSupplyStr = await rl.question("Is supply? (y/N): ");
 
+        const price = parseFloat(priceStr);
+        if (isNaN(price)) {
+          printError("Invalid price: must be a number (e.g. 19.99)");
+          process.exit(1);
+          return;
+        }
+        const quantity = parseInt(quantityStr, 10);
+        if (isNaN(quantity)) {
+          printError("Invalid quantity: must be an integer");
+          process.exit(1);
+          return;
+        }
+        const taxonomyId = parseInt(taxonomyIdStr, 10);
+        if (isNaN(taxonomyId)) {
+          printError("Invalid taxonomy ID: must be an integer");
+          process.exit(1);
+          return;
+        }
+
         const body: Record<string, unknown> = {
           title: title.trim(),
           description: description.trim(),
-          price: parseFloat(priceStr),
-          quantity: parseInt(quantityStr, 10),
+          price,
+          quantity,
           type: type.trim(),
-          taxonomy_id: parseInt(taxonomyIdStr, 10),
+          taxonomy_id: taxonomyId,
           who_made: whoMade.trim(),
           when_made: whenMade.trim(),
           is_supply: isSupplyStr.trim().toLowerCase() === "y",
@@ -166,6 +191,9 @@ export function registerListingsCommands(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         printError(`Failed to create listing: ${message}`);
+        if (isAuthError(err)) {
+          printError("Hint: run 'etsy auth login' to re-authenticate.");
+        }
         process.exit(1);
         return;
       } finally {
@@ -183,6 +211,13 @@ export function registerListingsCommands(
     .option("--state <state>", "New state: active, inactive, draft")
     .action(async (opts: { id: string; title?: string; price?: string; quantity?: string; state?: string }) => {
       try {
+        const validStates = ["active", "inactive", "draft"];
+        if (opts.state !== undefined && !validStates.includes(opts.state)) {
+          printError(`Invalid state: "${opts.state}". Must be one of: active, inactive, draft`);
+          process.exit(1);
+          return;
+        }
+
         const body: Record<string, unknown> = {};
 
         if (opts.title !== undefined) body.title = opts.title;
@@ -206,6 +241,9 @@ export function registerListingsCommands(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         printError(`Failed to update listing: ${message}`);
+        if (isAuthError(err)) {
+          printError("Hint: run 'etsy auth login' to re-authenticate.");
+        }
         process.exit(1);
         return;
       }

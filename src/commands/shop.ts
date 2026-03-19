@@ -1,14 +1,6 @@
 import { Command } from "commander";
 import type { EtsyClient } from "../etsy-client.js";
-import { printJson, printError } from "../output.js";
-
-function isAuthError(err: unknown): boolean {
-  if (err instanceof Error) {
-    const msg = err.message.toLowerCase();
-    return msg.includes("401") || msg.includes("403") || msg.includes("unauthorized") || msg.includes("forbidden");
-  }
-  return false;
-}
+import { printJson, printError, isAuthError } from "../output.js";
 
 interface ShopResult {
   shop_id?: number;
