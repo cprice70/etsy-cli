@@ -66,6 +66,7 @@ describe("shop commands", () => {
     await program.parseAsync(["node", "test", "shop", "get"]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("auth login"));
+    expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 
   it("shop get handles API errors gracefully", async () => {
