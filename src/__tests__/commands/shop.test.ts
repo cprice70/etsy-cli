@@ -40,6 +40,7 @@ describe("shop commands", () => {
     expect(output).toContain("MyShop");
     expect(output).toContain("USD");
     expect(output).toContain("42");
+    expect(output).toContain("On Vacation");
   });
 
   it("shop get outputs JSON with --json flag", async () => {
@@ -53,6 +54,18 @@ describe("shop commands", () => {
     await program.parseAsync(["node", "test", "shop", "get", "--json"]);
 
     expect(consoleSpy).toHaveBeenCalledWith(JSON.stringify(shop, null, 2));
+  });
+
+  it("shop get shows auth hint on 401 error", async () => {
+    mockCall.mockRejectedValueOnce(new Error("HTTP 401: Unauthorized"));
+
+    const program = new Command();
+    program.exitOverride();
+    registerShopCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "shop", "get"]);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("auth login"));
   });
 
   it("shop get handles API errors gracefully", async () => {
