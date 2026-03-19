@@ -58,14 +58,26 @@ export function registerOrdersCommands(
 
         const query: Record<string, string> = {
           limit: String(limit),
-          offset: opts.offset,
+          offset: String(parseInt(opts.offset, 10) || 0),
         };
 
         if (opts.start) {
-          query.min_created = String(Math.floor(new Date(opts.start).getTime() / 1000));
+          const ts = Math.floor(new Date(opts.start).getTime() / 1000);
+          if (isNaN(ts)) {
+            printError(`Invalid --start date: "${opts.start}". Use ISO 8601 format (e.g. 2024-01-01)`);
+            process.exit(1);
+            return;
+          }
+          query.min_created = String(ts);
         }
         if (opts.end) {
-          query.max_created = String(Math.floor(new Date(opts.end).getTime() / 1000));
+          const ts = Math.floor(new Date(opts.end).getTime() / 1000);
+          if (isNaN(ts)) {
+            printError(`Invalid --end date: "${opts.end}". Use ISO 8601 format (e.g. 2024-12-31)`);
+            process.exit(1);
+            return;
+          }
+          query.max_created = String(ts);
         }
 
         const result = await client.call(

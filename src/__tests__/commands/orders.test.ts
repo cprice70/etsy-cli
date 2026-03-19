@@ -154,7 +154,7 @@ describe("orders commands", () => {
 
     await program.parseAsync(["node", "test", "orders", "list"]);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("auth login"));
+    expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, expect.stringContaining("auth login"));
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 });
