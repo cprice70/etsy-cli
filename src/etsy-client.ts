@@ -86,6 +86,10 @@ export class EtsyClient {
       }
       throw new Error(message);
     }
+    // 204 No Content has no body to parse
+    if (response.status === 204) {
+      return {};
+    }
     return response.json();
   }
 
@@ -111,14 +115,21 @@ export class EtsyClient {
     }
 
     const tokens = await response.json() as {
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
+      access_token?: unknown;
+      refresh_token?: unknown;
+      expires_in?: unknown;
     };
+
+    if (typeof tokens.access_token !== "string" || !tokens.access_token ||
+        typeof tokens.refresh_token !== "string" || !tokens.refresh_token) {
+      throw new Error("Token refresh failed: invalid response from server. Run `etsy auth login` to re-authenticate.");
+    }
 
     this.config.accessToken = tokens.access_token;
     this.config.refreshToken = tokens.refresh_token;
-    this.config.accessTokenExpiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
+    this.config.accessTokenExpiresAt = typeof tokens.expires_in === "number"
+      ? Math.floor(Date.now() / 1000) + tokens.expires_in
+      : undefined;
 
     saveConfig(this.config);
   }

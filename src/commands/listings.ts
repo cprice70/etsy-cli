@@ -1,7 +1,7 @@
 import readline from "readline/promises";
 import { Command } from "commander";
 import type { EtsyClient } from "../etsy-client.js";
-import { printTable, printJson, printError, colorState, isAuthError } from "../output.js";
+import { printTable, printJson, printError, printSuccess, colorState, isAuthError } from "../output.js";
 
 interface ListingPrice {
   amount: number;
@@ -193,7 +193,7 @@ export function registerListingsCommands(
           { body, oauth: true }
         ) as { listing_id?: number };
 
-        console.log(`Created listing ID: ${result.listing_id}`);
+        printSuccess(`Created listing ID: ${result.listing_id}`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         printError(`Failed to create listing: ${message}`);
@@ -227,7 +227,15 @@ export function registerListingsCommands(
         const body: Record<string, unknown> = {};
 
         if (opts.title !== undefined) body.title = opts.title;
-        if (opts.price !== undefined) body.price = parseFloat(opts.price);
+        if (opts.price !== undefined) {
+          const price = parseFloat(opts.price);
+          if (isNaN(price)) {
+            printError("Invalid price: must be a number (e.g. 19.99)");
+            process.exit(1);
+            return;
+          }
+          body.price = price;
+        }
         if (opts.quantity !== undefined) body.quantity = parseInt(opts.quantity, 10);
         if (opts.state !== undefined) body.state = opts.state;
 
