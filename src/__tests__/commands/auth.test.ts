@@ -163,14 +163,13 @@ describe("auth login command", () => {
     vi.unstubAllGlobals();
   });
 
-  it("login without OAuth: prompts for api key and client ID, saves config, prints success", async () => {
+  it("login without OAuth: prompts for api key and shared secret, saves config, prints success", async () => {
     const { saveConfig, loadConfig } = await import("../../config.js");
     vi.mocked(loadConfig).mockReturnValue({});
-    // Answers: apiKey, sharedSecret, clientId, skip OAuth
+    // Answers: apiKey, sharedSecret, skip OAuth
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
       .mockResolvedValueOnce("mysecret123")
-      .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("n");
 
     const program = new Command();
@@ -179,12 +178,12 @@ describe("auth login command", () => {
 
     await program.parseAsync(["node", "test", "auth", "login"]);
 
-    // saveConfig called at least once with apiKey, sharedSecret, and clientId
+    // clientId is set to apiKey automatically
     expect(saveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "myapikey12345",
         sharedSecret: "mysecret123",
-        clientId: "myclientid123",
+        clientId: "myapikey12345",
       })
     );
 
@@ -220,11 +219,10 @@ describe("auth login command", () => {
         json: async () => ({ shop_id: 99999 }),
       });
 
-    // Answers: apiKey, sharedSecret, clientId, confirm OAuth ("y")
+    // Answers: apiKey, sharedSecret, confirm OAuth ("y")
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
       .mockResolvedValueOnce("mysecret123")
-      .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("y");
 
     const program = new Command();
@@ -242,7 +240,7 @@ describe("auth login command", () => {
       expect.objectContaining({
         apiKey: "myapikey12345",
         sharedSecret: "mysecret123",
-        clientId: "myclientid123",
+        clientId: "myapikey12345",
         accessToken: "access_abc",
         refreshToken: "refresh_xyz",
         shopId: "99999",
@@ -282,7 +280,6 @@ describe("auth login command", () => {
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
       .mockResolvedValueOnce("mysecret123")
-      .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("y")
       .mockResolvedValueOnce(""); // manual shop ID prompt — skip
 
@@ -292,8 +289,8 @@ describe("auth login command", () => {
 
     await program.parseAsync(["node", "test", "auth", "login"]);
 
-    // 5 prompts: apiKey, sharedSecret, clientId, oauth confirm, manual shop ID
-    expect(mockQuestion).toHaveBeenCalledTimes(5);
+    // 4 prompts: apiKey, sharedSecret, oauth confirm, manual shop ID
+    expect(mockQuestion).toHaveBeenCalledTimes(4);
     expect(saveConfig).toHaveBeenCalled();
     expect(processExitSpy).not.toHaveBeenCalled();
   });
@@ -334,26 +331,6 @@ describe("auth login command", () => {
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 
-  it("empty client ID: prints error and exits", async () => {
-    const { loadConfig } = await import("../../config.js");
-    vi.mocked(loadConfig).mockReturnValue({});
-    // API key + shared secret provided, client ID is empty
-    mockQuestion
-      .mockResolvedValueOnce("myapikey12345")
-      .mockResolvedValueOnce("mysecret123")
-      .mockResolvedValueOnce("");
-
-    const program = new Command();
-    program.exitOverride();
-    registerAuthCommands(program);
-
-    await program.parseAsync(["node", "test", "auth", "login"]);
-
-    const errorOutput = consoleErrorSpy.mock.calls.map((c) => c[0]).join("\n");
-    expect(errorOutput).toContain("Client ID");
-    expect(processExitSpy).toHaveBeenCalledWith(1);
-  });
-
   it("login with OAuth: handles callback failure (e.g. state mismatch)", async () => {
     const { loadConfig } = await import("../../config.js");
     vi.mocked(loadConfig).mockReturnValue({});
@@ -366,7 +343,6 @@ describe("auth login command", () => {
     mockQuestion
       .mockResolvedValueOnce("myapikey12345")
       .mockResolvedValueOnce("mysecret123")
-      .mockResolvedValueOnce("myclientid123")
       .mockResolvedValueOnce("y");
 
     const program = new Command();

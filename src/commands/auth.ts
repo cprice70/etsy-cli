@@ -124,19 +124,12 @@ export function registerAuthCommands(program: Command): void {
           return;
         }
 
-        const clientId = await rl.question("Client ID (same as API Key / keystring): ");
-        if (!clientId.trim()) {
-          printError("Client ID is required");
-          process.exit(1);
-          return;
-        }
-
         const currentConfig = loadConfig();
         const partialConfig: Partial<Config> = {
           ...currentConfig,
           apiKey: apiKey.trim(),
           sharedSecret: sharedSecret.trim(),
-          clientId: clientId.trim(),
+          clientId: apiKey.trim(), // Etsy uses keystring as client_id
         };
 
         // Save API key and client ID immediately for public read access
@@ -152,7 +145,7 @@ export function registerAuthCommands(program: Command): void {
           const authUrl =
             `https://www.etsy.com/oauth/connect` +
             `?response_type=code` +
-            `&client_id=${encodeURIComponent(clientId.trim())}` +
+            `&client_id=${encodeURIComponent(apiKey.trim())}` +
             `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
             `&scope=${encodeURIComponent(OAUTH_SCOPES)}` +
             `&state=${state}` +
@@ -168,7 +161,7 @@ export function registerAuthCommands(program: Command): void {
           const code = await waitForCallback(state);
 
           process.stdout.write("Exchanging code for tokens... ");
-          const tokens = await exchangeCodeForTokens(code, clientId.trim(), codeVerifier);
+          const tokens = await exchangeCodeForTokens(code, apiKey.trim(), codeVerifier);
           process.stdout.write("done\n");
 
           partialConfig.accessToken = tokens.access_token;
@@ -224,7 +217,6 @@ export function registerAuthCommands(program: Command): void {
         console.log("Etsy CLI Status:");
         console.log("  API Key:        " + maskSecret(config.apiKey));
         console.log("  Shared Secret:  " + maskSecret(config.sharedSecret));
-        console.log("  Client ID:      " + maskSecret(config.clientId));
         console.log("  OAuth:          " + (hasOAuth ? "configured" : "not configured"));
         console.log("  Access Token:   " + maskSecret(config.accessToken));
         console.log("  Token Expiry:   " + expiryStr);
