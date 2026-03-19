@@ -52,7 +52,7 @@ async function exchangeCodeForTokens(
   return response.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>;
 }
 
-async function detectShopId(accessToken: string): Promise<string | undefined> {
+async function detectShopId(accessToken: string, apiKey: string): Promise<string | undefined> {
   try {
     // Introspect to get user_id
     const introspectRes = await fetch(INTROSPECT_URL, {
@@ -60,6 +60,7 @@ async function detectShopId(accessToken: string): Promise<string | undefined> {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "Authorization": `Bearer ${accessToken}`,
+        "x-api-key": apiKey,
       },
       body: new URLSearchParams({ token: accessToken }).toString(),
     });
@@ -73,7 +74,10 @@ async function detectShopId(accessToken: string): Promise<string | undefined> {
     const shopsRes = await fetch(
       `https://openapi.etsy.com/v3/application/users/${introspect.user_id}/shops`,
       {
-        headers: { "Authorization": `Bearer ${accessToken}` },
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "x-api-key": apiKey,
+        },
       }
     );
 
@@ -108,10 +112,15 @@ export function registerAuthCommands(program: Command): void {
           process.exit(1);
         }
 
+        const currentConfig = loadConfig();
         const partialConfig: Partial<Config> = {
+          ...currentConfig,
           apiKey: apiKey.trim(),
           clientId: clientId.trim(),
         };
+
+        // Save API key and client ID immediately for public read access
+        saveConfig(partialConfig);
 
         const doOAuth = await rl.question("Complete OAuth for full access? (y/N): ");
 
@@ -152,16 +161,12 @@ export function registerAuthCommands(program: Command): void {
             Math.floor(Date.now() / 1000) + tokens.expires_in;
 
           process.stdout.write("Detecting shop ID... ");
-          const shopId = await detectShopId(tokens.access_token);
+          const shopId = await detectShopId(tokens.access_token, apiKey.trim());
           if (shopId) {
             process.stdout.write(`found: ${shopId}\n`);
             partialConfig.shopId = shopId;
           } else {
             process.stdout.write("not found\n");
-            const shopIdInput = await rl.question(
-              "Shop ID (find it in your Etsy shop URL or dashboard): "
-            );
-            partialConfig.shopId = shopIdInput.trim() || undefined;
           }
         }
 
