@@ -1,6 +1,6 @@
 {
   "name": "@cprice70/etsy-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI for the Etsy Open API v3",
   "type": "module",
   "main": "build/index.js",
