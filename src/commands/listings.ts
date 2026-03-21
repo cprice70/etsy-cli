@@ -218,10 +218,45 @@ export function registerListingsCommands(
     .option("--price <amount>", "New price")
     .option("--quantity <n>", "New quantity")
     .option("--state <state>", "New state: active, inactive, draft")
+    .option("--interactive", "Interactive mode with current value defaults")
     .option("--shop <id>", "Shop ID override")
-    .action(async (opts: { id: string; title?: string; description?: string; tags?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
+    .action(async (opts: { id: string; title?: string; description?: string; tags?: string; price?: string; quantity?: string; state?: string; shop?: string; interactive?: boolean }) => {
+      let rl: any;
       try {
         const shopId = resolveShopId({ shop: opts.shop });
+
+        // Interactive mode: fetch current values and prompt user
+        if (opts.interactive) {
+          rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+          // Fetch current listing
+          const current = await client.call("GET", `/application/listings/${opts.id}`, {}) as Listing & { tags?: string[] | string; description?: string };
+
+          // Prompt for each field with current value as default
+          const newTitle = await rl.question(`Title [Current: "${current.title || ""}"]: `);
+          const newDescription = await rl.question(`Description [Current: "${current.description || ""}"]: `);
+          const currentTags = Array.isArray(current.tags) ? current.tags.join(",") : (current.tags || "");
+          const newTags = await rl.question(`Tags [Current: "${currentTags}"]: `);
+          const newQuantity = await rl.question(`Quantity [Current: ${current.quantity || ""}]: `);
+          const currentPrice = current.price ? (current.price.amount / current.price.divisor).toFixed(2) : "";
+          const newPrice = await rl.question(`Price [Current: ${currentPrice}]: `);
+          const newState = await rl.question(`State [Current: ${current.state || ""}]: `);
+
+          // Build opts from user input (only non-empty values)
+          if (newTitle.trim()) opts.title = newTitle.trim();
+          else delete opts.title;
+          if (newDescription.trim()) opts.description = newDescription.trim();
+          else delete opts.description;
+          if (newTags.trim()) opts.tags = newTags.trim();
+          else delete opts.tags;
+          if (newQuantity.trim()) opts.quantity = newQuantity.trim();
+          else delete opts.quantity;
+          if (newPrice.trim()) opts.price = newPrice.trim();
+          else delete opts.price;
+          if (newState.trim()) opts.state = newState.trim();
+          else delete opts.state;
+        }
+
         const validStates = ["active", "inactive", "draft"];
         if (opts.state !== undefined && !validStates.includes(opts.state)) {
           printError(`Invalid state: "${opts.state}". Must be one of: active, inactive, draft`);
@@ -270,14 +305,22 @@ export function registerListingsCommands(
         }
         if (opts.price !== undefined) {
           const price = parseFloat(opts.price);
-          if (isNaN(price)) {
-            printError("Invalid price: must be a number (e.g. 19.99)");
+          if (isNaN(price) || price <= 0) {
+            printError("Invalid price: must be a positive number (e.g. 19.99)");
             process.exit(1);
             return;
           }
           body.price = price;
         }
-        if (opts.quantity !== undefined) body.quantity = parseInt(opts.quantity, 10);
+        if (opts.quantity !== undefined) {
+          const quantity = parseInt(opts.quantity, 10);
+          if (isNaN(quantity) || quantity < 0) {
+            printError("Invalid quantity: must be a non-negative integer");
+            process.exit(1);
+            return;
+          }
+          body.quantity = quantity;
+        }
         if (opts.state !== undefined) body.state = opts.state;
 
         if (Object.keys(body).length === 0) {
@@ -301,6 +344,11 @@ export function registerListingsCommands(
         }
         process.exit(1);
         return;
+      } finally {
+        if (rl) {
+          rl.close();
+          process.stdin.destroy();
+        }
       }
     });
 }

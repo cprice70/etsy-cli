@@ -269,4 +269,75 @@ describe("listings commands", () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
+
+  it("listings update with --interactive fetches current listing and prompts", async () => {
+    // Mock the fetch
+    mockCall.mockResolvedValueOnce({
+      listing_id: 42,
+      title: "Old Title",
+      description: "Old desc",
+      quantity: 5,
+      price: { amount: 2999, divisor: 100 },
+      state: "active"
+    });
+    // Mock the update
+    mockCall.mockResolvedValueOnce({ listing_id: 42 });
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    // Mock readline to simulate user entering a new title
+    const rl = require("readline/promises");
+    vi.spyOn(rl, "createInterface").mockReturnValue({
+      question: vi.fn()
+        .mockResolvedValueOnce("New Title") // title - user enters something
+        .mockResolvedValueOnce("") // description
+        .mockResolvedValueOnce("") // tags
+        .mockResolvedValueOnce("") // quantity
+        .mockResolvedValueOnce("") // price
+        .mockResolvedValueOnce(""), // state
+      close: vi.fn(),
+    } as any);
+
+    await program.parseAsync(["node", "test", "listings", "update", "--id", "42", "--interactive"]);
+
+    // Verify it fetched the listing first
+    expect(mockCall).toHaveBeenNthCalledWith(1, "GET", "/application/listings/42", {});
+    // Verify it called update (second call)
+    expect(mockCall).toHaveBeenNthCalledWith(2, "PATCH", "/application/shops/99999/listings/42", expect.anything());
+  });
+
+  it("listings update --interactive only sends changed fields", async () => {
+    mockCall.mockResolvedValueOnce({
+      listing_id: 42,
+      title: "Old Title",
+      description: "Old desc",
+      quantity: 5,
+      price: { amount: 2999, divisor: 100 },
+      state: "active"
+    });
+    mockCall.mockResolvedValueOnce({ listing_id: 42 });
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    const rl = require("readline/promises");
+    vi.spyOn(rl, "createInterface").mockReturnValue({
+      question: vi.fn()
+        .mockResolvedValueOnce("New Title") // title - changed
+        .mockResolvedValueOnce("") // description - unchanged
+        .mockResolvedValueOnce("") // tags - unchanged
+        .mockResolvedValueOnce("") // quantity - unchanged
+        .mockResolvedValueOnce("") // price - unchanged
+        .mockResolvedValueOnce(""), // state - unchanged
+      close: vi.fn(),
+    } as any);
+
+    await program.parseAsync(["node", "test", "listings", "update", "--id", "42", "--interactive"]);
+
+    // Should only send title in the body
+    expect(mockCall).toHaveBeenNthCalledWith(2, "PATCH", "/application/shops/99999/listings/42", expect.objectContaining({ body: { title: "New Title" } }));
+  });
 });
