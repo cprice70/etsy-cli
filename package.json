@@ -28,6 +28,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@cprice70/etsy-sdk": "file:../etsy-sdk",
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0"

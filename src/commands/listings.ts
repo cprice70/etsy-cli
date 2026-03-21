@@ -1,6 +1,7 @@
 import readline from "readline/promises";
 import { Command } from "commander";
 import type { EtsyClient } from "../etsy-client.js";
+import { validatePrice, validateQuantity, validateTags, validateDescription, validateState } from "@cprice70/etsy-sdk";
 import { printTable, printJson, printError, printSuccess, colorState, isAuthError } from "../output.js";
 
 interface ListingPrice {
@@ -257,69 +258,53 @@ export function registerListingsCommands(
           else delete opts.state;
         }
 
-        const validStates = ["active", "inactive", "draft"];
-        if (opts.state !== undefined && !validStates.includes(opts.state)) {
-          printError(`Invalid state: "${opts.state}". Must be one of: active, inactive, draft`);
-          process.exit(1);
-          return;
+        if (opts.state !== undefined) {
+          const stateResult = validateState(opts.state);
+          if (!stateResult.valid) {
+            printError(`Invalid state: "${opts.state}". ${stateResult.error}`);
+            process.exit(1);
+            return;
+          }
         }
 
         const body: Record<string, unknown> = {};
 
         if (opts.title !== undefined) body.title = opts.title;
         if (opts.description !== undefined) {
-          const trimmed = opts.description.trim();
-          if (!trimmed) {
-            printError("Invalid description: cannot be empty or whitespace-only");
+          const descResult = validateDescription(opts.description);
+          if (!descResult.valid) {
+            printError(descResult.error || "Invalid description");
             process.exit(1);
             return;
           }
-          body.description = trimmed;
+          body.description = opts.description.trim();
         }
         if (opts.tags !== undefined) {
-          const tagArray = opts.tags
-            .split(",")
-            .map(tag => tag.trim())
-            .filter(tag => tag.length > 0);
-
-          if (tagArray.length === 0) {
-            printError("Invalid tags: cannot be empty");
+          const tagsResult = validateTags(opts.tags);
+          if (!tagsResult.valid) {
+            printError(tagsResult.error || "Invalid tags");
             process.exit(1);
             return;
           }
-
-          if (tagArray.length > 13) {
-            printError("Invalid tags: maximum 13 tags allowed");
-            process.exit(1);
-            return;
-          }
-
-          const uniqueTags = new Set(tagArray);
-          if (uniqueTags.size !== tagArray.length) {
-            printError("Invalid tags: duplicate tags found");
-            process.exit(1);
-            return;
-          }
-
-          body.tags = tagArray;
+          body.tags = tagsResult.parsed;
         }
         if (opts.price !== undefined) {
-          const price = parseFloat(opts.price);
-          if (isNaN(price) || price <= 0) {
-            printError("Invalid price: must be a positive number (e.g. 19.99)");
+          const priceResult = validatePrice(opts.price);
+          if (!priceResult.valid) {
+            printError(priceResult.error || "Invalid price");
             process.exit(1);
             return;
           }
-          body.price = price;
+          body.price = parseFloat(opts.price);
         }
         if (opts.quantity !== undefined) {
-          const quantity = parseInt(opts.quantity, 10);
-          if (isNaN(quantity) || quantity < 0) {
-            printError("Invalid quantity: must be a non-negative integer");
+          const quantityResult = validateQuantity(opts.quantity);
+          if (!quantityResult.valid) {
+            printError(quantityResult.error || "Invalid quantity");
             process.exit(1);
             return;
           }
-          body.quantity = quantity;
+          body.quantity = parseInt(opts.quantity, 10);
         }
         if (opts.state !== undefined) body.state = opts.state;
 
