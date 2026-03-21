@@ -32,28 +32,37 @@ Create a standalone npm package `@cprice70/etsy-sdk` that provides core Etsy API
 
 ### Architecture
 
+**Directory structure at `/Users/cprice/Projects/`:**
+
 ```
-etsy-cli/
-├── packages/sdk/                    (NEW: shared library)
+Projects/
+├── etsy-sdk/                        (NEW: separate SDK package)
 │   ├── src/
 │   │   ├── client.ts               (EtsyClient HTTP client)
 │   │   ├── validators.ts           (validation functions)
 │   │   ├── types.ts                (TypeScript interfaces)
 │   │   └── __tests__/              (unit tests)
-│   ├── package.json
+│   ├── package.json                (standalone npm package)
 │   ├── tsconfig.json
-│   └── README.md
+│   ├── README.md
+│   └── .github/
+│       └── workflows/              (GitHub Actions CI/CD)
 │
-├── src/                             (CLI refactored to use library)
-│   ├── commands/listings.ts         (imports validators from sdk)
-│   ├── config.ts
-│   ├── output.ts
-│   └── index.ts
-│
-└── package.json                     (depends on packages/sdk)
+└── etsy-cli/                        (EXISTING: CLI updated to use SDK)
+    ├── src/                         (CLI refactored to import from @cprice70/etsy-sdk)
+    │   ├── commands/listings.ts     (imports validators from sdk)
+    │   ├── config.ts
+    │   ├── output.ts
+    │   └── index.ts
+    ├── package.json                (depends on @cprice70/etsy-sdk)
+    ├── tsconfig.json
+    └── .github/
+        └── workflows/              (GitHub Actions CI/CD)
 ```
 
-**Location:** Extract into `packages/sdk/` subfolder within same GitHub repo (easier than separate repo initially).
+**Location:** Separate GitHub repository: `github.com/cprice70/etsy-sdk` (independent from CLI)
+
+**Independence:** SDK is completely standalone. CLI (and future MCP/web) install it as an npm dependency from npm registry.
 
 ### Module Structure
 
@@ -295,11 +304,11 @@ Client receives response
 
 ---
 
-### Monorepo Setup
+### Separate Package Setup
 
-**Build Order:** SDK must build before CLI (CLI depends on SDK)
+**etsy-sdk repository** (independent npm package):
 
-**`packages/sdk/tsconfig.json`** (new SDK package):
+**`etsy-sdk/tsconfig.json`:**
 ```json
 {
   "compilerOptions": {
@@ -321,58 +330,52 @@ Client receives response
 }
 ```
 
-**Root `tsconfig.json`** (updated to reference SDK):
+**`etsy-sdk/package.json`:**
 ```json
 {
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@cprice70/etsy-sdk": ["packages/sdk/build/index.js"],
-      "@cprice70/etsy-sdk/*": ["packages/sdk/build/*"]
-    }
-  },
-  "files": [],
-  "references": [
-    { "path": "./packages/sdk" },
-    { "path": "./tsconfig.cli.json" }
-  ]
-}
-```
-
-**`tsconfig.cli.json`** (CLI references SDK):
-```json
-{
-  "compilerOptions": {
-    "baseUrl": "."
-  },
-  "extends": "./tsconfig.json",
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules"]
-}
-```
-
-**`packages/sdk/package.json`** dependency declaration:
-```json
-{
+  "name": "@cprice70/etsy-sdk",
+  "version": "0.0.1",
+  "description": "Shared Etsy API client and validation",
+  "type": "module",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "files": ["build"],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cprice70/etsy-sdk"
   }
 }
 ```
 
-**Root package.json build order:**
-```json
-{
-  "scripts": {
-    "build": "npm run -w packages/sdk build && tsc -p tsconfig.cli.json",
-    "dev": "npm run -w packages/sdk build && tsx watch src/index.ts"
-  }
-}
-```
+**Development workflow:**
 
-**Validation:** After setup, `npm run build` should:
-1. Build SDK → `packages/sdk/build/index.js`
-2. Build CLI → `build/index.js`
+1. **SDK development and publishing** (in etsy-sdk repo):
+   ```bash
+   npm run build
+   npm test
+   npm publish  # Publishes to npm registry as @cprice70/etsy-sdk
+   ```
+
+2. **CLI uses published SDK** (in etsy-cli repo):
+   ```json
+   {
+     "dependencies": {
+       "@cprice70/etsy-sdk": "^0.0.1"
+     }
+   }
+   ```
+
+3. **Local development** (if modifying SDK while developing CLI):
+   ```bash
+   # In etsy-cli repo
+   npm install ../etsy-sdk  # Install local version
+   # Or use npm link for development mode
+   ```
 
 ---
 
@@ -433,15 +436,20 @@ export type {
 
 **Impact on existing CLI:**
 1. Remove validation logic from `src/commands/listings.ts` (price, quantity, tags, description, state)
-2. Import validators from `@cprice70/etsy-sdk`
-3. Update `src/etsy-client.ts` to re-export from `@cprice70/etsy-sdk`
+2. Import validators and EtsyClient from `@cprice70/etsy-sdk` npm package
+3. Deprecate local `src/etsy-client.ts` (no longer needed, use SDK version)
 4. Add `@cprice70/etsy-sdk` as dependency in CLI's `package.json`
+
+**Before implementing CLI changes:**
+- SDK must be built and published to npm as `@cprice70/etsy-sdk` version 0.0.1
+- CLI then depends on that published version
 
 **Result:** CLI becomes thinner, focused on:
 - Command parsing (Commander.js)
-- Config management (load/save credentials)
+- Config management (load/save credentials from `~/.config`)
 - Output formatting (chalk, cli-table3)
-- Integration with library
+- Integration with SDK (EtsyClient, validators)
+- CLI-specific concerns (interactive mode, table output)
 
 ---
 
