@@ -142,14 +142,10 @@ export function validateState(state: string): ValidationResult;
 
 **Exports:**
 ```typescript
-export interface Config {
-  apiKey: string;
-  sharedSecret: string;
-  accessToken: string;
-  refreshToken: string;
-  accessTokenExpiresAt?: number;
-}
+// Re-export Config from client (single source of truth)
+export type { Config } from './client.js';
 
+// Etsy API response types
 export interface Listing {
   listing_id?: number;
   title?: string;
@@ -169,6 +165,8 @@ export interface ListingPrice {
 
 // ... other Etsy API types
 ```
+
+**Note:** Config is defined in `client.ts` and re-exported from `types.ts` to maintain a single source of truth.
 
 ---
 
@@ -299,7 +297,31 @@ Client receives response
 
 ### Monorepo Setup
 
-**Root `tsconfig.json`:**
+**Build Order:** SDK must build before CLI (CLI depends on SDK)
+
+**`packages/sdk/tsconfig.json`** (new SDK package):
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "lib": ["ES2020"],
+    "outDir": "./build",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "node_modules"]
+}
+```
+
+**Root `tsconfig.json`** (updated to reference SDK):
 ```json
 {
   "compilerOptions": {
@@ -308,20 +330,49 @@ Client receives response
       "@cprice70/etsy-sdk": ["packages/sdk/build/index.js"],
       "@cprice70/etsy-sdk/*": ["packages/sdk/build/*"]
     }
-  }
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/sdk" },
+    { "path": "./tsconfig.cli.json" }
+  ]
 }
 ```
 
-**CLI `package.json` dependency:**
+**`tsconfig.cli.json`** (CLI references SDK):
 ```json
 {
-  "dependencies": {
-    "@cprice70/etsy-sdk": "workspace:*"
+  "compilerOptions": {
+    "baseUrl": "."
+  },
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+
+**`packages/sdk/package.json`** dependency declaration:
+```json
+{
+  "scripts": {
+    "build": "tsc"
   }
 }
 ```
 
-**Build order:** SDK builds first, then CLI (depends on SDK output).
+**Root package.json build order:**
+```json
+{
+  "scripts": {
+    "build": "npm run -w packages/sdk build && tsc -p tsconfig.cli.json",
+    "dev": "npm run -w packages/sdk build && tsx watch src/index.ts"
+  }
+}
+```
+
+**Validation:** After setup, `npm run build` should:
+1. Build SDK → `packages/sdk/build/index.js`
+2. Build CLI → `build/index.js`
 
 ---
 
