@@ -172,6 +172,25 @@ describe("listings commands", () => {
     );
   });
 
+  it("listings update sends description when provided", async () => {
+    mockCall.mockResolvedValueOnce({ listing_id: 42 });
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync([
+      "node", "test", "listings", "update", "--id", "42",
+      "--description", "New description",
+    ]);
+
+    expect(mockCall).toHaveBeenCalledWith(
+      "PATCH",
+      "/application/shops/99999/listings/42",
+      expect.objectContaining({ body: { description: "New description" } })
+    );
+  });
+
   // ── error handling ─────────────────────────────────────────────────────────
 
   it("listings list handles API errors", async () => {

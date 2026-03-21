@@ -213,11 +213,12 @@ export function registerListingsCommands(
     .description("Update a listing")
     .requiredOption("--id <id>", "Listing ID")
     .option("--title <text>", "New title")
+    .option("--description <text>", "New description")
     .option("--price <amount>", "New price")
     .option("--quantity <n>", "New quantity")
     .option("--state <state>", "New state: active, inactive, draft")
     .option("--shop <id>", "Shop ID override")
-    .action(async (opts: { id: string; title?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
+    .action(async (opts: { id: string; title?: string; description?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
       try {
         const shopId = resolveShopId({ shop: opts.shop });
         const validStates = ["active", "inactive", "draft"];
@@ -230,6 +231,15 @@ export function registerListingsCommands(
         const body: Record<string, unknown> = {};
 
         if (opts.title !== undefined) body.title = opts.title;
+        if (opts.description !== undefined) {
+          const trimmed = opts.description.trim();
+          if (!trimmed) {
+            printError("Invalid description: cannot be empty or whitespace-only");
+            process.exit(1);
+            return;
+          }
+          body.description = trimmed;
+        }
         if (opts.price !== undefined) {
           const price = parseFloat(opts.price);
           if (isNaN(price)) {
