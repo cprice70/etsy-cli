@@ -191,6 +191,33 @@ describe("listings commands", () => {
     );
   });
 
+  it("listings update sends tags when provided", async () => {
+    mockCall.mockResolvedValueOnce({ listing_id: 42 });
+
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "listings", "update", "--id", "42", "--tags", "vintage,handmade,art"]);
+
+    expect(mockCall).toHaveBeenCalledWith(
+      "PATCH",
+      "/application/shops/99999/listings/42",
+      expect.objectContaining({ body: { tags: ["vintage", "handmade", "art"] } })
+    );
+  });
+
+  it("listings update rejects tags with only whitespace", async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerListingsCommands(program, mockClient, resolveShopId);
+
+    await program.parseAsync(["node", "test", "listings", "update", "--id", "42", "--tags", "  ,  ,tag1"]);
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
   // ── error handling ─────────────────────────────────────────────────────────
 
   it("listings list handles API errors", async () => {

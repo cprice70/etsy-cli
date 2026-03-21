@@ -214,11 +214,12 @@ export function registerListingsCommands(
     .requiredOption("--id <id>", "Listing ID")
     .option("--title <text>", "New title")
     .option("--description <text>", "New description")
+    .option("--tags <tags>", "Comma-separated tags (max 13)")
     .option("--price <amount>", "New price")
     .option("--quantity <n>", "New quantity")
     .option("--state <state>", "New state: active, inactive, draft")
     .option("--shop <id>", "Shop ID override")
-    .action(async (opts: { id: string; title?: string; description?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
+    .action(async (opts: { id: string; title?: string; description?: string; tags?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
       try {
         const shopId = resolveShopId({ shop: opts.shop });
         const validStates = ["active", "inactive", "draft"];
@@ -239,6 +240,33 @@ export function registerListingsCommands(
             return;
           }
           body.description = trimmed;
+        }
+        if (opts.tags !== undefined) {
+          const tagArray = opts.tags
+            .split(",")
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0);
+
+          if (tagArray.length === 0) {
+            printError("Invalid tags: cannot be empty");
+            process.exit(1);
+            return;
+          }
+
+          if (tagArray.length > 13) {
+            printError("Invalid tags: maximum 13 tags allowed");
+            process.exit(1);
+            return;
+          }
+
+          const uniqueTags = new Set(tagArray);
+          if (uniqueTags.size !== tagArray.length) {
+            printError("Invalid tags: duplicate tags found");
+            process.exit(1);
+            return;
+          }
+
+          body.tags = tagArray;
         }
         if (opts.price !== undefined) {
           const price = parseFloat(opts.price);
