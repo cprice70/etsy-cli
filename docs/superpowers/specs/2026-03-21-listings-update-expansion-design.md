@@ -68,8 +68,9 @@ When `--interactive` is used:
 #### Interactive Mode Flow
 
 1. **Fetch current listing**
-   - `GET /application/shops/{shopId}/listings/{id}`
-   - Extract current values for all fields
+   - Use same endpoint as CLI mode (will be determined during implementation based on API response)
+   - Extract current values for title, quantity, price, state
+   - Note: description and tags may require special handling if not in standard response
 
 2. **Prompt user** (one per field)
    ```
@@ -84,6 +85,7 @@ When `--interactive` is used:
 3. **Build diff**
    - Only include fields where user provided a new value
    - Empty updates rejected (same as CLI mode)
+   - **Resource cleanup:** Always call `rl.close()` and `process.stdin.destroy()` in finally block (same pattern as create command)
 
 4. **Send PATCH request**
    - `/application/shops/{shopId}/listings/{id}`
@@ -93,12 +95,19 @@ When `--interactive` is used:
 
 | Field | Validation |
 |-------|-----------|
-| title | Non-empty string, trim |
-| description | Non-empty string, trim |
-| tags | Split by comma, trim each, max 13 items |
-| quantity | Non-negative integer |
-| price | Valid positive number |
-| state | One of: active, inactive, draft |
+| title | Non-empty after trim, error if whitespace-only |
+| description | Non-empty after trim, error if whitespace-only |
+| tags | Split by comma, trim each, filter empty strings, max 13 items, error if empty array result |
+| quantity | Parse as integer, must be >= 0, error if negative |
+| price | Parse as float, must be > 0, error if zero or negative |
+| state | Must be one of: active, inactive, draft, case-sensitive |
+
+**Implementation notes:**
+- All string inputs: trim, reject if result is empty/whitespace-only
+- Tags: reject duplicates after trim, error with specific message about which tag is duplicate
+- Quantity: validate >= 0 before API call
+- Price: decimal places handled by parseFloat (API constraints TBD)
+- State: exact case match to valid values
 
 #### Error Handling
 
@@ -172,9 +181,31 @@ No architectural changes needed.
 - ✅ All tests pass (100% coverage of new code)
 - ✅ Easy to add new fields in future (documented extensibility)
 
+## Implementation Notes
+
+### API Constraints (To Verify During Implementation)
+
+These should be verified via Etsy API testing:
+- **Description field**: Confirm it's returned in GET listing response and updateable via PATCH
+- **Tags field**: Confirm representation in API (array vs comma-separated), max length per tag
+- **Price decimal precision**: Confirm Etsy's precision requirements (e.g., .01, .001)
+- **State transitions**: Determine if all transitions are allowed or if validation needed
+- **Fetch endpoint for interactive mode**: Confirm which endpoint returns all necessary fields for defaults
+
+### Resource Cleanup
+
+Interactive mode must use the same pattern as create command:
+```typescript
+finally {
+  rl.close();
+  process.stdin.destroy();  // CRITICAL: prevents process hanging
+}
+```
+
 ## Future Enhancements
 
 - Additional fields: materials, shippingProfileId, returnPolicyId, etc.
 - Batch update multiple listings
 - Field descriptions/help in interactive mode
 - Preset templates for common updates
+- State transition validation if API requires it
