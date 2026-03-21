@@ -281,7 +281,7 @@ export function registerListingsCommands(
         if (opts.state !== undefined) body.state = opts.state;
 
         if (Object.keys(body).length === 0) {
-          printError("No fields to update. Provide at least one of: --title, --price, --quantity, --state");
+          printError("No fields to update. Provide at least one of: --title, --description, --tags, --price, --quantity, --state");
           process.exit(1);
           return;
         }
