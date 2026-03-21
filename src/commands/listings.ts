@@ -216,8 +216,10 @@ export function registerListingsCommands(
     .option("--price <amount>", "New price")
     .option("--quantity <n>", "New quantity")
     .option("--state <state>", "New state: active, inactive, draft")
-    .action(async (opts: { id: string; title?: string; price?: string; quantity?: string; state?: string }) => {
+    .option("--shop <id>", "Shop ID override")
+    .action(async (opts: { id: string; title?: string; price?: string; quantity?: string; state?: string; shop?: string }) => {
       try {
+        const shopId = resolveShopId({ shop: opts.shop });
         const validStates = ["active", "inactive", "draft"];
         if (opts.state !== undefined && !validStates.includes(opts.state)) {
           printError(`Invalid state: "${opts.state}". Must be one of: active, inactive, draft`);
@@ -248,7 +250,7 @@ export function registerListingsCommands(
 
         const result = await client.call(
           "PATCH",
-          `/application/listings/${opts.id}`,
+          `/application/shops/${shopId}/listings/${opts.id}`,
           { body, oauth: true }
         ) as Listing;
 

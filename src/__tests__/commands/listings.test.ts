@@ -148,7 +148,7 @@ describe("listings commands", () => {
 
     expect(mockCall).toHaveBeenCalledWith(
       "PATCH",
-      "/application/listings/42",
+      "/application/shops/99999/listings/42",
       expect.objectContaining({ body: { title: "New Title" } })
     );
   });
@@ -167,7 +167,7 @@ describe("listings commands", () => {
 
     expect(mockCall).toHaveBeenCalledWith(
       "PATCH",
-      "/application/listings/42",
+      "/application/shops/99999/listings/42",
       expect.objectContaining({ body: { price: 19.99, quantity: 10 } })
     );
   });
