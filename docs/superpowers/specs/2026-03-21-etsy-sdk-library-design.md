@@ -62,15 +62,16 @@ etsy-cli/
 **Export:**
 ```typescript
 export class EtsyClient {
-  constructor(config: Config);
+  constructor(config: Partial<Config>);
   call(method: string, path: string, options: CallOptions): Promise<unknown>;
 }
 
 export interface Config {
-  apiKey: string;
-  sharedSecret: string;
-  accessToken: string;
-  refreshToken: string;
+  apiKey?: string;
+  sharedSecret?: string;
+  clientId: string;              // Required for OAuth token refresh
+  accessToken?: string;
+  refreshToken?: string;
   accessTokenExpiresAt?: number;
 }
 
@@ -88,15 +89,18 @@ export interface CallOptions {
 - Fetch-based implementation (Node.js 18+)
 
 **Does NOT handle:**
-- Loading/saving credentials
 - Validating input data
 - Determining what API calls to make
 
+**Important:** Token refresh **mutates** the config object passed to constructor. Clients must:
+- Save updated tokens after API calls (if using file-based storage)
+- Or provide injectable `onTokenRefresh` callback for credential updates
+
 **Preserved behavior:**
-- x-api-key format: `keystring:shared_secret`
-- Bearer token in Authorization header
+- x-api-key format: `keystring:shared_secret` (if apiKey + sharedSecret provided)
+- Bearer token in Authorization header (if accessToken provided)
 - 204 No Content responses return empty object
-- Credentials passed as constructor, not mutated
+- Supports multiple auth modes: OAuth-only, API key-only, or both
 
 ---
 
@@ -164,6 +168,45 @@ export interface ListingPrice {
 }
 
 // ... other Etsy API types
+```
+
+---
+
+### Credential Persistence Strategy
+
+Since token refresh mutates the config object, clients must handle persistence:
+
+#### CLI (file-based):
+```typescript
+const client = new EtsyClient(config);
+const result = await client.call(...);
+
+// After calls that might refresh token, save updated config
+if (config.accessToken !== originalToken) {
+  saveConfigToFile(config);  // CLI responsibility
+}
+```
+
+#### MCP Server (environment + memory):
+```typescript
+const config = {
+  clientId: process.env.ETSY_CLIENT_ID,
+  accessToken: process.env.ETSY_ACCESS_TOKEN,
+  refreshToken: process.env.ETSY_REFRESH_TOKEN
+};
+const client = new EtsyClient(config);
+
+// Tokens refreshed in memory, but not persisted to env
+// MCP server will restart fresh or store in separate mechanism
+```
+
+#### Web App (session + database):
+```typescript
+const client = new EtsyClient(session.etsyCredentials);
+const result = await client.call(...);
+
+// Save refreshed tokens back to session/database
+session.etsyCredentials = { ...session.etsyCredentials, ...client.config };
 ```
 
 ---
@@ -251,6 +294,34 @@ EtsyClient handles:
     ↓
 Client receives response
 ```
+
+---
+
+### Monorepo Setup
+
+**Root `tsconfig.json`:**
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@cprice70/etsy-sdk": ["packages/sdk/build/index.js"],
+      "@cprice70/etsy-sdk/*": ["packages/sdk/build/*"]
+    }
+  }
+}
+```
+
+**CLI `package.json` dependency:**
+```json
+{
+  "dependencies": {
+    "@cprice70/etsy-sdk": "workspace:*"
+  }
+}
+```
+
+**Build order:** SDK builds first, then CLI (depends on SDK output).
 
 ---
 
